@@ -27,9 +27,14 @@ import { handleSearchObject } from './handlers/handleSearchObject';
 import { handleGetCDSView } from './handlers/handleGetCDSView';
 import { handleGetBehaviorDefinition } from './handlers/handleGetBehaviorDefinition';
 import { handleGetServiceDefinition } from './handlers/handleGetServiceDefinition';
+import { handleLockObject } from './handlers/handleLockObject';
+import { handleUnlockObject } from './handlers/handleUnlockObject';
+import { handleActivateObject } from './handlers/handleActivateObject';
+import { handleSaveObjectSource } from './handlers/handleSaveObjectSource';
 
 // Import shared utility functions and types
 import { getBaseUrl, getAuthHeaders, createAxiosInstance, makeAdtRequest, return_error, return_response } from './lib/utils';
+import { objectLocatorSchemaProperties } from './lib/objectTypes';
 
 // Load environment variables from .env file
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
@@ -341,6 +346,62 @@ export class mcp_abap_adt_server {
               },
               required: ['service_definition_name']
             }
+          },
+          {
+            name: 'LockObject',
+            description: 'Lock an ABAP object for editing and obtain a lock handle (required by SaveObjectSource and UnlockObject)',
+            inputSchema: {
+              type: 'object',
+              properties: objectLocatorSchemaProperties,
+              required: ['object_type', 'object_name']
+            }
+          },
+          {
+            name: 'UnlockObject',
+            description: 'Release a lock previously acquired with LockObject',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                ...objectLocatorSchemaProperties,
+                lock_handle: {
+                  type: 'string',
+                  description: 'Lock handle returned by LockObject'
+                }
+              },
+              required: ['object_type', 'object_name', 'lock_handle']
+            }
+          },
+          {
+            name: 'SaveObjectSource',
+            description: 'Write new source code to a locked ABAP object (does not activate it)',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                ...objectLocatorSchemaProperties,
+                lock_handle: {
+                  type: 'string',
+                  description: 'Lock handle returned by LockObject'
+                },
+                source_code: {
+                  type: 'string',
+                  description: 'Full new source code of the object'
+                },
+                transport_request: {
+                  type: 'string',
+                  description: 'Transport request number, required if the object belongs to a non-local package'
+                }
+              },
+              required: ['object_type', 'object_name', 'lock_handle', 'source_code']
+            }
+          },
+          {
+            name: 'ActivateObject',
+            description: 'Activate an inactive ABAP object (e.g. after SaveObjectSource)',
+            inputSchema: {
+              type: 'object',
+              properties: objectLocatorSchemaProperties,
+              required: ['object_type', 'object_name']
+            }
           }
         ]
       };
@@ -381,6 +442,14 @@ export class mcp_abap_adt_server {
           return await handleGetBehaviorDefinition(request.params.arguments);
         case 'GetServiceDefinition':
           return await handleGetServiceDefinition(request.params.arguments);
+        case 'LockObject':
+          return await handleLockObject(request.params.arguments);
+        case 'UnlockObject':
+          return await handleUnlockObject(request.params.arguments);
+        case 'SaveObjectSource':
+          return await handleSaveObjectSource(request.params.arguments);
+        case 'ActivateObject':
+          return await handleActivateObject(request.params.arguments);
         default:
           throw new McpError(
             ErrorCode.MethodNotFound,

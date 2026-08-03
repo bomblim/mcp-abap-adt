@@ -326,8 +326,14 @@ This server provides the following tools, which can be used through FLUJO, Cline
 | `GetTransaction`    | Retrieve ABAP transaction details.                | `transaction_name` (string): Name of the ABAP transaction.         | `@tool GetTransaction transaction_name=ZMY_TRANSACTION`    |
 | `GetBehaviorDefinition` | Retrieve RAP Behavior Definition (BDEF) source. Requires ~NW 7.54 / S/4HANA. | `behavior_definition_name` (string): Name of the RAP Behavior Definition. | `@tool GetBehaviorDefinition behavior_definition_name=ZMY_ENTITY` |
 | `GetServiceDefinition`  | Retrieve RAP Service Definition (SRVD) source. Requires ~NW 7.54 / S/4HANA.  | `service_definition_name` (string): Name of the RAP Service Definition.   | `@tool GetServiceDefinition service_definition_name=ZMY_SERVICE`  |
+| `LockObject`         | Lock an ABAP object for editing and obtain a `lockHandle`. | `object_type` (string, see below), `object_name` (string), `function_group` (string, only for `function_module`) | `@tool LockObject object_type=program object_name=ZMY_PROGRAM` |
+| `UnlockObject`       | Release a lock previously acquired with `LockObject`. | `object_type`, `object_name`, `function_group` (if applicable), `lock_handle` (string) | `@tool UnlockObject object_type=program object_name=ZMY_PROGRAM lock_handle=...` |
+| `SaveObjectSource`   | Write new source code to a locked ABAP object (does not activate it). | `object_type`, `object_name`, `function_group` (if applicable), `lock_handle` (string), `source_code` (string), `transport_request` (string, optional) | `@tool SaveObjectSource object_type=program object_name=ZMY_PROGRAM lock_handle=... source_code="REPORT zmy_program."` |
+| `ActivateObject`     | Activate an inactive ABAP object (e.g. after `SaveObjectSource`). | `object_type`, `object_name`, `function_group` (if applicable) | `@tool ActivateObject object_type=program object_name=ZMY_PROGRAM` |
 
+`object_type` for the tools above must be one of: `program`, `class`, `interface`, `include`, `function_group`, `function_module`, `structure`, `table`, `cds_view`, `behavior_definition`, `service_definition`. For `function_module`, `function_group` must also be supplied.
 
+**Typical edit workflow:** `LockObject` → `SaveObjectSource` (using the returned `lockHandle`) → `ActivateObject` → `UnlockObject`. These tools perform real, permanent changes to the connected SAP system — use them with the same care as editing the object directly in SAP GUI/Eclipse ADT, and make sure the configured SAP user has the necessary authorizations (object change, transport, activation).
 
 <a href="https://glama.ai/mcp/servers/gwkh12xlu7">
   <img width="380" height="200" src="https://glama.ai/mcp/servers/gwkh12xlu7/badge" alt="ABAP ADT MCP server" />
