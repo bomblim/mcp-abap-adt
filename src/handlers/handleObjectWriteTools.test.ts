@@ -2,10 +2,11 @@ import { handleLockObject } from './handleLockObject';
 import { handleUnlockObject } from './handleUnlockObject';
 import { handleSaveObjectSource } from './handleSaveObjectSource';
 import { handleActivateObject } from './handleActivateObject';
+import { handleCreateObject } from './handleCreateObject';
 import { cleanup } from '../lib/utils';
 
 // These tests only cover input validation, since exercising the real ADT
-// lock/save/activate flow requires a live SAP system.
+// create/lock/save/activate flow requires a live SAP system.
 describe('object write tools - input validation', () => {
   afterAll(() => {
     cleanup();
@@ -58,6 +59,37 @@ describe('object write tools - input validation', () => {
       const result = await handleActivateObject({ object_type: 'program' });
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('object_name');
+    });
+  });
+
+  describe('handleCreateObject', () => {
+    it('rejects a missing object_type', async () => {
+      const result = await handleCreateObject({ object_name: 'ZFOO', package_name: '$TMP' });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('object_type');
+    });
+
+    it('rejects an unsupported object_type', async () => {
+      const result = await handleCreateObject({ object_type: 'table', object_name: 'ZFOO', package_name: '$TMP' });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('object_type');
+    });
+
+    it('rejects a missing package_name', async () => {
+      const result = await handleCreateObject({ object_type: 'program', object_name: 'ZFOO' });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('package_name');
+    });
+
+    it('rejects an invalid class_visibility', async () => {
+      const result = await handleCreateObject({
+        object_type: 'class',
+        object_name: 'ZCL_FOO',
+        package_name: '$TMP',
+        class_visibility: 'nonsense'
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('class_visibility');
     });
   });
 });

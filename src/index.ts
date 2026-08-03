@@ -31,10 +31,12 @@ import { handleLockObject } from './handlers/handleLockObject';
 import { handleUnlockObject } from './handlers/handleUnlockObject';
 import { handleActivateObject } from './handlers/handleActivateObject';
 import { handleSaveObjectSource } from './handlers/handleSaveObjectSource';
+import { handleCreateObject } from './handlers/handleCreateObject';
 
 // Import shared utility functions and types
 import { getBaseUrl, getAuthHeaders, createAxiosInstance, makeAdtRequest, return_error, return_response } from './lib/utils';
 import { objectLocatorSchemaProperties } from './lib/objectTypes';
+import { createObjectSchemaProperties } from './lib/objectCreate';
 
 // Load environment variables from .env file
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
@@ -348,6 +350,15 @@ export class mcp_abap_adt_server {
             }
           },
           {
+            name: 'CreateObject',
+            description: 'Create a new ABAP object (program, class, interface, function group, or include). The object is created without source; use LockObject -> SaveObjectSource -> ActivateObject -> UnlockObject afterwards to add and activate its source.',
+            inputSchema: {
+              type: 'object',
+              properties: createObjectSchemaProperties,
+              required: ['object_type', 'object_name', 'package_name']
+            }
+          },
+          {
             name: 'LockObject',
             description: 'Lock an ABAP object for editing and obtain a lock handle (required by SaveObjectSource and UnlockObject)',
             inputSchema: {
@@ -442,6 +453,8 @@ export class mcp_abap_adt_server {
           return await handleGetBehaviorDefinition(request.params.arguments);
         case 'GetServiceDefinition':
           return await handleGetServiceDefinition(request.params.arguments);
+        case 'CreateObject':
+          return await handleCreateObject(request.params.arguments);
         case 'LockObject':
           return await handleLockObject(request.params.arguments);
         case 'UnlockObject':
