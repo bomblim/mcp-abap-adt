@@ -340,10 +340,12 @@ This server provides the following tools, which can be used through FLUJO, Cline
 `object_type` for `LockObject`/`UnlockObject`/`SaveObjectSource`/`CheckObject`/`ActivateObject` must be one of: `program`, `class`, `interface`, `include`, `function_group`, `function_module`, `structure`, `table`, `cds_view`, `behavior_definition`, `service_definition`. For `function_module`, `function_group` must also be supplied. `CreateObject` only supports `program`, `class`, `interface`, `function_group`, `include` (DDIC and RAP objects have a substantially different creation schema and are not covered yet).
 
 **Typical workflows:**
-- **New object:** `CreateObject` → `LockObject` → `SaveObjectSource` (with the initial source) → `CheckObject` (optional, catch syntax errors early) → `ActivateObject` → `UnlockObject`.
-- **Editing an existing object:** `LockObject` → `SaveObjectSource` (using the returned `lockHandle`) → `CheckObject` (optional) → `ActivateObject` → `UnlockObject`.
+- **New object:** `CreateObject` → `LockObject` → `SaveObjectSource` (with the initial source) → `CheckObject` (optional, catch syntax errors early) → `UnlockObject` → `ActivateObject`.
+- **Editing an existing object:** `LockObject` → `SaveObjectSource` (using the returned `lockHandle`) → `CheckObject` (optional) → `UnlockObject` → `ActivateObject`.
 
 Use `CheckObject` with `version=inactive` right after `SaveObjectSource` to catch syntax errors before spending an activation attempt — `ActivateObject` will also report errors, but a check-first flow lets the agent decide not to activate broken code at all.
+
+Note: `ActivateObject` now runs *after* `UnlockObject` (moved per user request). `ActivateObject` doesn't take a `lock_handle` and doesn't itself depend on the object still being locked, but activating after unlocking does reopen a small race window — another session could lock and change the object between `UnlockObject` and `ActivateObject`. If that's a concern in your environment, activating before unlocking (the original order) closes that window.
 
 These tools perform real, permanent changes to the connected SAP system — use them with the same care as editing/creating the object directly in SAP GUI/Eclipse ADT, and make sure the configured SAP user has the necessary authorizations (object creation, object change, transport, activation). The XML payload/Content-Type used by `CreateObject` follows the commonly documented ADT creation protocol, but the exact Content-Type version suffix (`v2`/`v3`/...) can vary by NetWeaver release — if creation fails with a 406/415 error, this is the first thing to check against your system's ADT discovery document.
 

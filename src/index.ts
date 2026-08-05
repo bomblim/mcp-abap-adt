@@ -352,7 +352,7 @@ export class mcp_abap_adt_server {
           },
           {
             name: 'CreateObject',
-            description: 'Step 1 of 6 (new objects only) in the ABAP edit workflow: CreateObject -> LockObject -> SaveObjectSource -> CheckObject (optional) -> ActivateObject -> UnlockObject. Creates a new ABAP object (program, class, interface, function group, or include), without source. Skip this step when editing an object that already exists. Note: this cannot create a Dynpro/screen directly (no ADT endpoint for that) — for "create a screen" requests, either write a selection-screen report (object_type=program is enough), or for a real Screen Painter dynpro, create a generator program (e.g. using RPY_DYNPRO_INSERT) and tell the user to run it once via SE38; see README section 9.1.',
+            description: 'Step 1 of 6 (new objects only) in the ABAP edit workflow: CreateObject -> LockObject -> SaveObjectSource -> CheckObject (optional) -> UnlockObject -> ActivateObject. Creates a new ABAP object (program, class, interface, function group, or include), without source. Skip this step when editing an object that already exists. Note: this cannot create a Dynpro/screen directly (no ADT endpoint for that) — for "create a screen" requests, either write a selection-screen report (object_type=program is enough), or for a real Screen Painter dynpro, create a generator program (e.g. using RPY_DYNPRO_INSERT) and tell the user to run it once via SE38; see README section 9.1.',
             inputSchema: {
               type: 'object',
               properties: createObjectSchemaProperties,
@@ -361,7 +361,7 @@ export class mcp_abap_adt_server {
           },
           {
             name: 'LockObject',
-            description: 'Step 2 of 6 in the ABAP edit workflow: CreateObject (skip if editing an existing object) -> LockObject -> SaveObjectSource -> CheckObject (optional) -> ActivateObject -> UnlockObject. Locks an ABAP object for editing and returns a lockHandle, which must be passed to SaveObjectSource and UnlockObject.',
+            description: 'Step 2 of 6 in the ABAP edit workflow: CreateObject (skip if editing an existing object) -> LockObject -> SaveObjectSource -> CheckObject (optional) -> UnlockObject -> ActivateObject. Locks an ABAP object for editing and returns a lockHandle, which must be passed to SaveObjectSource and UnlockObject.',
             inputSchema: {
               type: 'object',
               properties: objectLocatorSchemaProperties,
@@ -370,7 +370,7 @@ export class mcp_abap_adt_server {
           },
           {
             name: 'UnlockObject',
-            description: 'Step 6 of 6 (final step) in the ABAP edit workflow: CreateObject -> LockObject -> SaveObjectSource -> CheckObject (optional) -> ActivateObject -> UnlockObject. Releases a lock previously acquired with LockObject. Call this last, after ActivateObject, to avoid a race window where the object is unlocked but not yet activated.',
+            description: 'Step 5 of 6 in the ABAP edit workflow: CreateObject -> LockObject -> SaveObjectSource -> CheckObject (optional) -> UnlockObject -> ActivateObject. Releases a lock previously acquired with LockObject. Call this before ActivateObject.',
             inputSchema: {
               type: 'object',
               properties: {
@@ -385,7 +385,7 @@ export class mcp_abap_adt_server {
           },
           {
             name: 'SaveObjectSource',
-            description: 'Step 3 of 6 in the ABAP edit workflow: CreateObject -> LockObject -> SaveObjectSource -> CheckObject (optional) -> ActivateObject -> UnlockObject. Writes new source code to an object locked with LockObject; requires the lockHandle it returned. Does not activate the object.',
+            description: 'Step 3 of 6 in the ABAP edit workflow: CreateObject -> LockObject -> SaveObjectSource -> CheckObject (optional) -> UnlockObject -> ActivateObject. Writes new source code to an object locked with LockObject; requires the lockHandle it returned. Does not activate the object.',
             inputSchema: {
               type: 'object',
               properties: {
@@ -408,7 +408,7 @@ export class mcp_abap_adt_server {
           },
           {
             name: 'CheckObject',
-            description: 'Optional step 4 of 6 in the ABAP edit workflow, between SaveObjectSource and ActivateObject: CreateObject -> LockObject -> SaveObjectSource -> CheckObject -> ActivateObject -> UnlockObject. Runs an ADT syntax check against an object\'s source (the same check Eclipse ADT runs on save) without activating it, so errors can be caught before spending an activation attempt.',
+            description: 'Optional step 4 of 6 in the ABAP edit workflow, between SaveObjectSource and UnlockObject: CreateObject -> LockObject -> SaveObjectSource -> CheckObject -> UnlockObject -> ActivateObject. Runs an ADT syntax check against an object\'s source (the same check Eclipse ADT runs on save) without activating it, so errors can be caught before spending an activation attempt.',
             inputSchema: {
               type: 'object',
               properties: {
@@ -424,7 +424,7 @@ export class mcp_abap_adt_server {
           },
           {
             name: 'ActivateObject',
-            description: 'Step 5 of 6 in the ABAP edit workflow: CreateObject -> LockObject -> SaveObjectSource -> CheckObject (optional) -> ActivateObject -> UnlockObject. Activates an inactive ABAP object after its source has been saved. Call this before UnlockObject, while the object is still locked, to avoid another user locking and changing it in between.',
+            description: 'Step 6 of 6 (final step) in the ABAP edit workflow: CreateObject -> LockObject -> SaveObjectSource -> CheckObject (optional) -> UnlockObject -> ActivateObject. Activates an inactive ABAP object after its source has been saved. Call this last, after UnlockObject.',
             inputSchema: {
               type: 'object',
               properties: objectLocatorSchemaProperties,
