@@ -2,6 +2,7 @@ import { handleLockObject } from './handleLockObject';
 import { handleUnlockObject } from './handleUnlockObject';
 import { handleSaveObjectSource } from './handleSaveObjectSource';
 import { handleActivateObject } from './handleActivateObject';
+import { handleCheckObject } from './handleCheckObject';
 import { handleCreateObject } from './handleCreateObject';
 import { cleanup } from '../lib/utils';
 
@@ -59,6 +60,20 @@ describe('object write tools - input validation', () => {
       const result = await handleActivateObject({ object_type: 'program' });
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('object_name');
+    });
+  });
+
+  describe('handleCheckObject', () => {
+    it('rejects a missing object_name', async () => {
+      const result = await handleCheckObject({ object_type: 'program' });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('object_name');
+    });
+
+    it('rejects an invalid version', async () => {
+      const result = await handleCheckObject({ object_type: 'program', object_name: 'ZFOO', version: 'nonsense' });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('version');
     });
   });
 
