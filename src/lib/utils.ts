@@ -174,13 +174,21 @@ export async function makeAdtRequest(url: string, method: string, timeout: numbe
         requestConfig.data = data;
     }
 
+    // Only requests that are part of a stateful edit session (Lock/Save/Check/
+    // Activate/Unlock) should update the shared session cookie. An interleaved
+    // stateless call (e.g. a GetProgram done while an object is locked elsewhere)
+    // can get its own distinct session cookie from SAP; blindly adopting it here
+    // would silently swap out the cookie the locked edit session depends on,
+    // making later Save/Check/Activate/Unlock calls land on the wrong session.
+    const isStatefulRequest = requestHeaders['X-sap-adt-sessiontype'] === 'stateful';
+
     try {
         const response = await createAxiosInstance()(requestConfig);
-        // SAP may rotate/assign the stateful session cookie on any response (most
-        // notably the first stateful request, e.g. LockObject); keep it up to date so
-        // later calls in the same edit session (Save/Check/Activate/Unlock) land on
-        // the same backend session instead of being treated as a different editor.
-        if (response.headers['set-cookie']) {
+        // SAP may rotate/assign the stateful session cookie on any response in the
+        // stateful chain (most notably the first one, LockObject); keep it up to
+        // date so later calls in the same edit session land on the same backend
+        // session instead of being treated as a different editor.
+        if (isStatefulRequest && response.headers['set-cookie']) {
             cookies = response.headers['set-cookie'].join('; ');
         }
         return response;
