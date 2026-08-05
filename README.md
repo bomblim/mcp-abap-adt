@@ -303,6 +303,10 @@ Add `--scope project` to write it to the shared `.mcp.json`, or `--scope user` t
     *   Make sure that your SAP user has the necessary authorizations to access the ADT services.
     *   Check that the required ADT services are activated in transaction `SICF`.
     *   If you're using self-signed certificates or there is an issue with your SAP systems http config, make sure to set TLS_REJECT_UNAUTHORIZED as described above!
+*   **`LockObject` succeeds but `SaveObjectSource`/`CheckObject`/`ActivateObject`/`UnlockObject` fail with "Session not found" (or similar) even called immediately after:**
+    *   This means the stateful edit session created by `LockObject` isn't being found by the next call — usually because the SAP system is behind a load balancer (e.g. SAP Web Dispatcher) that isn't routing requests for the same session to the same application server instance.
+    *   Set `SAP_ADT_DEBUG=1` in `.env` (see `.env.example`) to log a fingerprint of the session cookie/`sap-contextid`/CSRF token sent and received on every Lock/Save/Check/Activate/Unlock call to stderr. Compare the `receivedContextId`/`receivedSetCookie` from the `LockObject` response against the `sentContextId`/`sentCookie` of the following call — if they don't match, the client-side session state got lost between calls (something to report); if they do match and the call still fails, the issue is most likely on the SAP infrastructure side (ask Basis to confirm sticky-session routing is enabled for the `/sap/bc/adt` path, or point `SAP_URL` at a single application server instance instead of the load balancer as a test).
+    *   Debug output goes to stderr only (never stdout, which carries the MCP protocol) and only logs short fingerprints of session values, never full tokens/cookies.
 
 ## 9. Available Tools
 

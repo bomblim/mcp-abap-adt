@@ -66,6 +66,27 @@ let cookies: string | null = null; // Variable to store cookies
 // even immediately after a successful lock.
 let sapContextId: string | null = null;
 
+// Set SAP_ADT_DEBUG=1 to log stateful-session diagnostics (method/url/status plus a
+// short fingerprint of the cookie/sap-contextid/csrf-token involved) to stderr. This
+// never touches stdout, which is reserved for the MCP JSON-RPC stream. Values are
+// fingerprinted (short prefix/suffix only), never printed in full, since they are
+// live session credentials.
+const DEBUG_ENABLED = process.env.SAP_ADT_DEBUG === '1' || process.env.SAP_ADT_DEBUG === 'true';
+
+function fingerprint(value: string | null | undefined): string {
+    if (!value) {
+        return '(none)';
+    }
+    return value.length > 20 ? `${value.slice(0, 10)}...${value.slice(-6)} (len ${value.length})` : value;
+}
+
+function debugLog(label: string, details: Record<string, unknown>) {
+    if (!DEBUG_ENABLED) {
+        return;
+    }
+    console.error(`[mcp-abap-adt][SAP_ADT_DEBUG] ${label}`, details);
+}
+
 export async function getBaseUrl() {
     if (!config) {
         config = getConfig();
@@ -93,7 +114,7 @@ export async function getAuthHeaders() {
     };
 }
 
-async function fetchCsrfToken(url: string): Promise<string> {
+async function fetchCsrfToken(url: string, stateful: boolean = false): Promise<string> {
     if (!config) {
         config = getConfig();
     }
@@ -106,7 +127,12 @@ async function fetchCsrfToken(url: string): Promise<string> {
             params: { 'sap-client': config.client },
             headers: {
                 ...(await getAuthHeaders()),
-                'x-csrf-token': 'fetch'
+                'x-csrf-token': 'fetch',
+                // When this handshake is for a stateful call (e.g. the first LockObject
+                // of a process), declare it stateful too, so SAP pins the session/
+                // context id starting here instead of opening a throwaway stateless
+                // session that gets replaced a moment later by the real request.
+                ...(stateful ? { 'X-sap-adt-sessiontype': 'stateful' } : {})
             }
         });
 
@@ -115,10 +141,19 @@ async function fetchCsrfToken(url: string): Promise<string> {
             throw new Error('No CSRF token in response headers');
         }
 
-        // Extract and store cookies
+        // Extract and store cookies (and, for stateful handshakes, the sap-contextid pin)
         if (response.headers['set-cookie']) {
             cookies = response.headers['set-cookie'].join('; ');
         }
+        if (stateful && response.headers['sap-contextid']) {
+            sapContextId = response.headers['sap-contextid'];
+        }
+        debugLog('csrf-fetch', {
+            url,
+            stateful,
+            receivedSetCookie: fingerprint(response.headers['set-cookie']?.join('; ')),
+            receivedContextId: fingerprint(response.headers['sap-contextid'])
+        });
 
         return token;
     } catch (error) {
@@ -129,6 +164,9 @@ async function fetchCsrfToken(url: string): Promise<string> {
                  // Extract and store cookies from the error response as well
                 if (error.response.headers['set-cookie']) {
                     cookies = error.response.headers['set-cookie'].join('; ');
+                }
+                if (stateful && error.response.headers['sap-contextid']) {
+                    sapContextId = error.response.headers['sap-contextid'];
                 }
                 return token;
             }
@@ -143,10 +181,18 @@ export async function makeAdtRequest(url: string, method: string, timeout: numbe
         config = getConfig();
     }
 
+    // Only requests that are part of a stateful edit session (Lock/Save/Check/
+    // Activate/Unlock) should carry/update the sap-contextid pin and trigger a
+    // stateful CSRF handshake. Attaching it to unrelated stateless calls (e.g.
+    // GetProgram) would be meaningless and, on the update side, an interleaved
+    // stateless call getting its own context id must not overwrite the one the
+    // open edit session depends on.
+    const isStatefulRequest = (headers || {})['X-sap-adt-sessiontype'] === 'stateful';
+
     // For POST/PUT requests, ensure we have a CSRF token
     if ((method === 'POST' || method === 'PUT') && !csrfToken) {
         try {
-            csrfToken = await fetchCsrfToken(url);
+            csrfToken = await fetchCsrfToken(url, isStatefulRequest);
         } catch (error) {
             throw new Error('CSRF token is required for POST/PUT requests but could not be fetched');
         }
@@ -167,12 +213,6 @@ export async function makeAdtRequest(url: string, method: string, timeout: numbe
         requestHeaders['Cookie'] = cookies;
     }
 
-    // Only requests that are part of a stateful edit session (Lock/Save/Check/
-    // Activate/Unlock) should carry/update the sap-contextid pin. Attaching it to
-    // unrelated stateless calls (e.g. GetProgram) would be meaningless and, on the
-    // update side, an interleaved stateless call getting its own context id must
-    // not overwrite the one the open edit session depends on.
-    const isStatefulRequest = requestHeaders['X-sap-adt-sessiontype'] === 'stateful';
     if (isStatefulRequest && sapContextId) {
         requestHeaders['sap-contextid'] = sapContextId;
     }
@@ -192,6 +232,16 @@ export async function makeAdtRequest(url: string, method: string, timeout: numbe
         requestConfig.data = data;
     }
 
+    if (isStatefulRequest) {
+        debugLog('request', {
+            method,
+            url,
+            sentCookie: fingerprint(cookies),
+            sentContextId: fingerprint(sapContextId),
+            sentCsrfToken: fingerprint(csrfToken)
+        });
+    }
+
     try {
         const response = await createAxiosInstance()(requestConfig);
         // SAP may rotate/assign the stateful session cookie and sap-contextid on any
@@ -199,15 +249,34 @@ export async function makeAdtRequest(url: string, method: string, timeout: numbe
         // keep both up to date so later calls in the same edit session land on the
         // same backend instance instead of being treated as a different editor.
         if (isStatefulRequest) {
-            if (response.headers['set-cookie']) {
-                cookies = response.headers['set-cookie'].join('; ');
+            const newCookies = response.headers['set-cookie'] ? response.headers['set-cookie'].join('; ') : null;
+            const newContextId = response.headers['sap-contextid'] ?? null;
+            debugLog('response', {
+                method,
+                url,
+                status: response.status,
+                receivedSetCookie: fingerprint(newCookies),
+                receivedContextId: fingerprint(newContextId)
+            });
+            if (newCookies) {
+                cookies = newCookies;
             }
-            if (response.headers['sap-contextid']) {
-                sapContextId = response.headers['sap-contextid'];
+            if (newContextId) {
+                sapContextId = newContextId;
             }
         }
         return response;
     } catch (error) {
+        if (isStatefulRequest && error instanceof AxiosError) {
+            debugLog('error-response', {
+                method,
+                url,
+                status: error.response?.status,
+                data: typeof error.response?.data === 'string' ? error.response.data.slice(0, 500) : error.response?.data,
+                receivedSetCookie: fingerprint(error.response?.headers['set-cookie']?.join('; ')),
+                receivedContextId: fingerprint(error.response?.headers['sap-contextid'])
+            });
+        }
         // If we get a 403 with "CSRF token validation failed", try to fetch a new token and retry
         if (error instanceof AxiosError && error.response?.status === 403 &&
             error.response.data?.includes('CSRF')) {
