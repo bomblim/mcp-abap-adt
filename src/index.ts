@@ -352,7 +352,7 @@ export class mcp_abap_adt_server {
           },
           {
             name: 'CreateObject',
-            description: 'Step 1 of 6 (new objects only) in the ABAP edit workflow: CreateObject -> LockObject -> SaveObjectSource -> CheckObject (optional) -> ActivateObject -> UnlockObject. Creates a new ABAP object (program, class, interface, function group, or include), without source. Skip this step when editing an object that already exists.',
+            description: 'Step 1 of 6 (new objects only) in the ABAP edit workflow: CreateObject -> LockObject -> SaveObjectSource -> CheckObject (optional) -> ActivateObject -> UnlockObject. Creates a new ABAP object (program, class, interface, function group, or include), without source. Skip this step when editing an object that already exists. Note: this cannot create a Dynpro/screen directly (no ADT endpoint for that) — for "create a screen" requests, either write a selection-screen report (object_type=program is enough), or for a real Screen Painter dynpro, create a generator program (e.g. using RPY_DYNPRO_INSERT) and tell the user to run it once via SE38; see README section 9.1.',
             inputSchema: {
               type: 'object',
               properties: createObjectSchemaProperties,

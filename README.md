@@ -343,6 +343,15 @@ Use `CheckObject` with `version=inactive` right after `SaveObjectSource` to catc
 
 These tools perform real, permanent changes to the connected SAP system — use them with the same care as editing/creating the object directly in SAP GUI/Eclipse ADT, and make sure the configured SAP user has the necessary authorizations (object creation, object change, transport, activation). The XML payload/Content-Type used by `CreateObject` follows the commonly documented ADT creation protocol, but the exact Content-Type version suffix (`v2`/`v3`/...) can vary by NetWeaver release — if creation fails with a 406/415 error, this is the first thing to check against your system's ADT discovery document.
 
+### 9.1 Recipe: handling "create a screen" requests
+
+None of the tools above can create a Dynpro (a Screen Painter/SE51 screen) directly — ADT has no simple text-based creation endpoint for it, unlike programs/classes/interfaces (a Dynpro's layout is a structured Screen Painter format, not plain source text). When a user asks for a new SAP "screen", pick one of these two patterns depending on what they actually mean:
+
+- **Selection screen** (the parameter/filter popup an executable report shows on `SE38` → Execute): this is just ABAP source (`PARAMETERS`, `SELECT-OPTIONS`, `SELECTION-SCREEN BEGIN OF ... END OF ...`) inside a normal report. No workaround needed — use the standard new-object workflow: `CreateObject` (`object_type=program`, e.g. `package_name=$TMP` for a local/throwaway object) → `LockObject` → `SaveObjectSource` (with the selection-screen statements included) → `CheckObject` → `ActivateObject` → `UnlockObject`.
+- **Custom Dynpro / dialog screen** (a real Screen Painter screen with a number, layout, and flow logic, as edited in `SE51`): create a small generator *program* instead — one whose source, when executed, programmatically builds the screen via function modules such as `RPY_DYNPRO_INSERT` (used by Repository Information System / migration tooling to insert a dynpro definition and flow logic at runtime). Build it with the same `CreateObject` → `LockObject` → `SaveObjectSource` → `CheckObject` → `ActivateObject` → `UnlockObject` sequence, then, since this MCP server intentionally has no tool to execute arbitrary ABAP, tell the user to run the generator once in `SE38` to actually produce the target screen.
+
+In both cases, since there is no `RunProgram`/`ExecuteProgram` tool (running arbitrary ABAP is a materially higher-risk capability than editing/activating source, and is out of scope here), always finish by telling the user to execute the created program manually in `SE38`.
+
 <a href="https://glama.ai/mcp/servers/gwkh12xlu7">
   <img width="380" height="200" src="https://glama.ai/mcp/servers/gwkh12xlu7/badge" alt="ABAP ADT MCP server" />
 </a>
