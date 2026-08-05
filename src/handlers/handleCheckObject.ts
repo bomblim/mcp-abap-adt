@@ -29,7 +29,10 @@ export async function handleCheckObject(args: any) {
             30000,
             body,
             { reporters: 'abapCheckRun' },
-            { 'Content-Type': 'application/vnd.sap.adt.checkobjects+xml' }
+            {
+                'Content-Type': 'application/vnd.sap.adt.checkobjects+xml',
+                'X-sap-adt-sessiontype': 'stateful'
+            }
         );
 
         return return_response(response);

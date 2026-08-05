@@ -176,6 +176,13 @@ export async function makeAdtRequest(url: string, method: string, timeout: numbe
 
     try {
         const response = await createAxiosInstance()(requestConfig);
+        // SAP may rotate/assign the stateful session cookie on any response (most
+        // notably the first stateful request, e.g. LockObject); keep it up to date so
+        // later calls in the same edit session (Save/Check/Activate/Unlock) land on
+        // the same backend session instead of being treated as a different editor.
+        if (response.headers['set-cookie']) {
+            cookies = response.headers['set-cookie'].join('; ');
+        }
         return response;
     } catch (error) {
         // If we get a 403 with "CSRF token validation failed", try to fetch a new token and retry

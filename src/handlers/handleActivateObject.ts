@@ -21,7 +21,10 @@ export async function handleActivateObject(args: any) {
             30000,
             body,
             { method: 'activate', preauditRequested: true },
-            { 'Content-Type': 'application/xml' }
+            {
+                'Content-Type': 'application/xml',
+                'X-sap-adt-sessiontype': 'stateful'
+            }
         );
 
         return return_response(response);
