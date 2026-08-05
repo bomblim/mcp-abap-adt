@@ -114,7 +114,7 @@ export async function getAuthHeaders() {
     };
 }
 
-async function fetchCsrfToken(url: string, stateful: boolean = false): Promise<string> {
+async function fetchCsrfToken(url: string): Promise<string> {
     if (!config) {
         config = getConfig();
     }
@@ -127,12 +127,12 @@ async function fetchCsrfToken(url: string, stateful: boolean = false): Promise<s
             params: { 'sap-client': config.client },
             headers: {
                 ...(await getAuthHeaders()),
-                'x-csrf-token': 'fetch',
-                // When this handshake is for a stateful call (e.g. the first LockObject
-                // of a process), declare it stateful too, so SAP pins the session/
-                // context id starting here instead of opening a throwaway stateless
-                // session that gets replaced a moment later by the real request.
-                ...(stateful ? { 'X-sap-adt-sessiontype': 'stateful' } : {})
+                'x-csrf-token': 'fetch'
+                // Deliberately NOT X-sap-adt-sessiontype: stateful here. Declaring this
+                // preliminary token-fetch GET as stateful was tried and made things
+                // worse (LockObject itself started failing with "Session not found"),
+                // so the actual stateful session is left to be established by the real
+                // request that follows (e.g. LockObject's POST), same as before.
             }
         });
 
@@ -141,18 +141,13 @@ async function fetchCsrfToken(url: string, stateful: boolean = false): Promise<s
             throw new Error('No CSRF token in response headers');
         }
 
-        // Extract and store cookies (and, for stateful handshakes, the sap-contextid pin)
+        // Extract and store cookies
         if (response.headers['set-cookie']) {
             cookies = response.headers['set-cookie'].join('; ');
         }
-        if (stateful && response.headers['sap-contextid']) {
-            sapContextId = response.headers['sap-contextid'];
-        }
         debugLog('csrf-fetch', {
             url,
-            stateful,
-            receivedSetCookie: fingerprint(response.headers['set-cookie']?.join('; ')),
-            receivedContextId: fingerprint(response.headers['sap-contextid'])
+            receivedSetCookie: fingerprint(response.headers['set-cookie']?.join('; '))
         });
 
         return token;
@@ -164,9 +159,6 @@ async function fetchCsrfToken(url: string, stateful: boolean = false): Promise<s
                  // Extract and store cookies from the error response as well
                 if (error.response.headers['set-cookie']) {
                     cookies = error.response.headers['set-cookie'].join('; ');
-                }
-                if (stateful && error.response.headers['sap-contextid']) {
-                    sapContextId = error.response.headers['sap-contextid'];
                 }
                 return token;
             }
@@ -182,17 +174,16 @@ export async function makeAdtRequest(url: string, method: string, timeout: numbe
     }
 
     // Only requests that are part of a stateful edit session (Lock/Save/Check/
-    // Activate/Unlock) should carry/update the sap-contextid pin and trigger a
-    // stateful CSRF handshake. Attaching it to unrelated stateless calls (e.g.
-    // GetProgram) would be meaningless and, on the update side, an interleaved
-    // stateless call getting its own context id must not overwrite the one the
-    // open edit session depends on.
+    // Activate/Unlock) should carry/update the sap-contextid pin. Attaching it to
+    // unrelated stateless calls (e.g. GetProgram) would be meaningless and, on the
+    // update side, an interleaved stateless call getting its own context id must
+    // not overwrite the one the open edit session depends on.
     const isStatefulRequest = (headers || {})['X-sap-adt-sessiontype'] === 'stateful';
 
     // For POST/PUT requests, ensure we have a CSRF token
     if ((method === 'POST' || method === 'PUT') && !csrfToken) {
         try {
-            csrfToken = await fetchCsrfToken(url, isStatefulRequest);
+            csrfToken = await fetchCsrfToken(url);
         } catch (error) {
             throw new Error('CSRF token is required for POST/PUT requests but could not be fetched');
         }
