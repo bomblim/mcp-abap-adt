@@ -52,11 +52,19 @@ export function cleanup() {
     config = undefined;
     csrfToken = null;
     cookies = null;
+    sapContextId = null;
 }
 
 let config: SapConfig | undefined;
 let csrfToken: string | null = null;
 let cookies: string | null = null; // Variable to store cookies
+// In a load-balanced SAP system, a stateful session (created by LockObject) lives on
+// one specific application server instance. SAP returns a "sap-contextid" response
+// header to pin subsequent requests to that same instance; without echoing it back,
+// the next stateful call (e.g. SaveObjectSource) can be routed to a different
+// instance that has never heard of the session, failing with "Session not found"
+// even immediately after a successful lock.
+let sapContextId: string | null = null;
 
 export async function getBaseUrl() {
     if (!config) {
@@ -159,6 +167,16 @@ export async function makeAdtRequest(url: string, method: string, timeout: numbe
         requestHeaders['Cookie'] = cookies;
     }
 
+    // Only requests that are part of a stateful edit session (Lock/Save/Check/
+    // Activate/Unlock) should carry/update the sap-contextid pin. Attaching it to
+    // unrelated stateless calls (e.g. GetProgram) would be meaningless and, on the
+    // update side, an interleaved stateless call getting its own context id must
+    // not overwrite the one the open edit session depends on.
+    const isStatefulRequest = requestHeaders['X-sap-adt-sessiontype'] === 'stateful';
+    if (isStatefulRequest && sapContextId) {
+        requestHeaders['sap-contextid'] = sapContextId;
+    }
+
     const requestConfig: any = {
         method,
         url,
@@ -174,22 +192,19 @@ export async function makeAdtRequest(url: string, method: string, timeout: numbe
         requestConfig.data = data;
     }
 
-    // Only requests that are part of a stateful edit session (Lock/Save/Check/
-    // Activate/Unlock) should update the shared session cookie. An interleaved
-    // stateless call (e.g. a GetProgram done while an object is locked elsewhere)
-    // can get its own distinct session cookie from SAP; blindly adopting it here
-    // would silently swap out the cookie the locked edit session depends on,
-    // making later Save/Check/Activate/Unlock calls land on the wrong session.
-    const isStatefulRequest = requestHeaders['X-sap-adt-sessiontype'] === 'stateful';
-
     try {
         const response = await createAxiosInstance()(requestConfig);
-        // SAP may rotate/assign the stateful session cookie on any response in the
-        // stateful chain (most notably the first one, LockObject); keep it up to
-        // date so later calls in the same edit session land on the same backend
-        // session instead of being treated as a different editor.
-        if (isStatefulRequest && response.headers['set-cookie']) {
-            cookies = response.headers['set-cookie'].join('; ');
+        // SAP may rotate/assign the stateful session cookie and sap-contextid on any
+        // response in the stateful chain (most notably the first one, LockObject);
+        // keep both up to date so later calls in the same edit session land on the
+        // same backend instance instead of being treated as a different editor.
+        if (isStatefulRequest) {
+            if (response.headers['set-cookie']) {
+                cookies = response.headers['set-cookie'].join('; ');
+            }
+            if (response.headers['sap-contextid']) {
+                sapContextId = response.headers['sap-contextid'];
+            }
         }
         return response;
     } catch (error) {
