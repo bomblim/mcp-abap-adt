@@ -51,13 +51,46 @@ export function cleanup() {
     axiosInstance = null;
     config = undefined;
     csrfToken = null;
-    cookies = null;
+    cookieJar.clear();
     sapContextId = null;
 }
 
 let config: SapConfig | undefined;
 let csrfToken: string | null = null;
-let cookies: string | null = null; // Variable to store cookies
+// Cookie jar keyed by cookie name. A `Set-Cookie` response header is a full
+// attribute string ("name=value; Path=/; HttpOnly; Secure"), which is NOT valid
+// syntax for an outgoing `Cookie` request header (name=value pairs only). Naively
+// joining raw Set-Cookie strings together and resending them as Cookie previously
+// sent garbage like "...; Path=/; HttpOnly; ..." to SAP — some servers reject a
+// Cookie header containing an attribute-only token (HttpOnly has no "="), which
+// silently drops the whole header and looks exactly like "session not found".
+// Storing only the name=value pairs, merged by name across responses, avoids this.
+const cookieJar: Map<string, string> = new Map();
+
+export function storeSetCookieHeaders(setCookieHeaders: string[] | undefined): void {
+    if (!setCookieHeaders || setCookieHeaders.length === 0) {
+        return;
+    }
+    for (const rawCookie of setCookieHeaders) {
+        const pair = rawCookie.split(';', 1)[0];
+        const eq = pair.indexOf('=');
+        if (eq === -1) {
+            continue;
+        }
+        const name = pair.slice(0, eq).trim();
+        const value = pair.slice(eq + 1).trim();
+        if (name) {
+            cookieJar.set(name, value);
+        }
+    }
+}
+
+export function getCookieHeader(): string | null {
+    if (cookieJar.size === 0) {
+        return null;
+    }
+    return Array.from(cookieJar.entries()).map(([name, value]) => `${name}=${value}`).join('; ');
+}
 // In a load-balanced SAP system, a stateful session (created by LockObject) lives on
 // one specific application server instance. SAP returns a "sap-contextid" response
 // header to pin subsequent requests to that same instance; without echoing it back,
@@ -142,12 +175,10 @@ async function fetchCsrfToken(url: string): Promise<string> {
         }
 
         // Extract and store cookies
-        if (response.headers['set-cookie']) {
-            cookies = response.headers['set-cookie'].join('; ');
-        }
+        storeSetCookieHeaders(response.headers['set-cookie']);
         debugLog('csrf-fetch', {
             url,
-            receivedSetCookie: fingerprint(response.headers['set-cookie']?.join('; '))
+            receivedSetCookie: fingerprint(response.headers['set-cookie']?.join(' | '))
         });
 
         return token;
@@ -157,9 +188,7 @@ async function fetchCsrfToken(url: string): Promise<string> {
             const token = error.response.headers['x-csrf-token'];
             if (token) {
                  // Extract and store cookies from the error response as well
-                if (error.response.headers['set-cookie']) {
-                    cookies = error.response.headers['set-cookie'].join('; ');
-                }
+                storeSetCookieHeaders(error.response.headers['set-cookie']);
                 return token;
             }
         }
@@ -200,8 +229,9 @@ export async function makeAdtRequest(url: string, method: string, timeout: numbe
     }
 
     // Add cookies if available
-    if (cookies) {
-        requestHeaders['Cookie'] = cookies;
+    const cookieHeader = getCookieHeader();
+    if (cookieHeader) {
+        requestHeaders['Cookie'] = cookieHeader;
     }
 
     if (isStatefulRequest && sapContextId) {
@@ -227,7 +257,7 @@ export async function makeAdtRequest(url: string, method: string, timeout: numbe
         debugLog('request', {
             method,
             url,
-            sentCookie: fingerprint(cookies),
+            sentCookie: fingerprint(cookieHeader),
             sentContextId: fingerprint(sapContextId),
             sentCsrfToken: fingerprint(csrfToken)
         });
@@ -240,18 +270,15 @@ export async function makeAdtRequest(url: string, method: string, timeout: numbe
         // keep both up to date so later calls in the same edit session land on the
         // same backend instance instead of being treated as a different editor.
         if (isStatefulRequest) {
-            const newCookies = response.headers['set-cookie'] ? response.headers['set-cookie'].join('; ') : null;
+            storeSetCookieHeaders(response.headers['set-cookie']);
             const newContextId = response.headers['sap-contextid'] ?? null;
             debugLog('response', {
                 method,
                 url,
                 status: response.status,
-                receivedSetCookie: fingerprint(newCookies),
+                receivedSetCookie: fingerprint(response.headers['set-cookie']?.join(' | ')),
                 receivedContextId: fingerprint(newContextId)
             });
-            if (newCookies) {
-                cookies = newCookies;
-            }
             if (newContextId) {
                 sapContextId = newContextId;
             }
